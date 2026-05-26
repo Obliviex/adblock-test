@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ad Blocker Stress Test</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0f0f0f; color: #e0e0e0; padding: 2rem; min-height: 100vh; }
+  h1 { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: #555; margin-bottom: 6px; }
+  h2 { font-size: 16px; font-weight: 500; color: #e0e0e0; margin-bottom: 1.5rem; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .grid2 { display: grid; grid-template-columns: 160px 1fr; gap: 8px; margin-bottom: 10px; }
+  .card { background: #1a1a1a; border-radius: 10px; padding: 14px 16px; }
+  .card-label { font-size: 10px; color: #555; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .card-val { font-size: 20px; font-weight: 500; }
+  .score-card { background: #1a1a1a; border-radius: 10px; padding: 24px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; grid-row: span 2; }
+  .score-num { font-size: 60px; font-weight: 500; line-height: 1; letter-spacing: -0.03em; }
+  .score-sub { font-size: 10px; color: #555; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 6px; }
+  .progress-card { background: #1a1a1a; border-radius: 10px; padding: 12px 16px; }
+  .progress-bar-bg { height: 5px; background: #111; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.25s ease; }
+  .progress-meta { display: flex; justify-content: space-between; font-size: 10px; color: #555; margin-top: 6px; }
+  button { font-family: monospace; font-size: 13px; background: transparent; border: 0.5px solid #444; color: #e0e0e0; padding: 8px 18px; border-radius: 8px; cursor: pointer; margin-right: 8px; margin-bottom: 1.25rem; }
+  button:hover { background: #1a1a1a; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .verdict { padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 1.25rem; font-size: 13px; line-height: 1.6; }
+  .log-wrap { background: #1a1a1a; border-radius: 10px; padding: 14px 16px; max-height: 320px; overflow-y: auto; }
+  .log-entry { display: flex; align-items: center; gap: 10px; font-size: 11px; padding: 3px 0; border-bottom: 0.5px solid #222; }
+  .log-dot { font-size: 8px; min-width: 8px; }
+  .log-domain { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
+  .log-status { font-size: 10px; min-width: 60px; text-align: right; }
+  .footer { margin-top: 1.25rem; font-size: 10px; color: #444; line-height: 1.7; }
+  .err { color: #f87171; font-size: 12px; background: #2a1515; border-radius: 8px; padding: 10px 14px; margin-bottom: 1rem; }
+  .green { color: #4ade80; }
+  .red { color: #f87171; }
+  .yellow { color: #fbbf24; }
+  .gray { color: #888; }
+  .header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.5rem; }
+  .status-text { font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="header-row">
+  <div>
+    <h1>ad blocker stress test</h1>
+    <h2>10,000 ad &amp; tracker domains</h2>
+  </div>
+  <div class="status-text" id="status">ready</div>
+</div>
+
+<div class="grid2">
+  <div class="score-card" id="score-card">
+    <div class="score-num gray" id="pct">0</div>
+    <div class="score-sub">% blocked</div>
+  </div>
+  <div class="grid4" style="margin-bottom:8px">
+    <div class="card"><div class="card-label">blocked</div><div class="card-val green" id="val-blocked">0</div></div>
+    <div class="card"><div class="card-label">not blocked</div><div class="card-val red" id="val-missed">0</div></div>
+    <div class="card"><div class="card-label">tested</div><div class="card-val" id="val-tested">0</div></div>
+    <div class="card"><div class="card-label">speed</div><div class="card-val gray" id="val-speed">—</div></div>
+  </div>
+  <div class="progress-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="card-label" style="margin:0">progress</div>
+      <div style="font-size:11px;color:#555" id="prog-label">0 / 10,000</div>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill gray" id="prog-bar" style="width:0%"></div></div>
+    <div class="progress-meta"><span id="prog-pct">0% done</span><span id="eta"></span></div>
+  </div>
+</div>
+
+<div id="buttons">
+  <button id="btn-start" onclick="startTest()">start test ↗</button>
+</div>
+
+<div id="err-box" style="display:none" class="err"></div>
+<div id="verdict-box" style="display:none" class="verdict"></div>
+
+<div id="log-box" style="display:none" class="log-wrap">
+  <div class="card-label" style="margin-bottom:8px">live feed</div>
+  <div id="log"></div>
+</div>
+
+<div class="footer">
+  domains sourced from Steven Black's hosts list · detection via fetch timing (≤30ms fail = blocked) · ~2–5 min to complete
+</div>
+
+<script>
+const BATCH = 120, TIMEOUT = 900, FAST_FAIL = 30, TARGET = 10000;
+const HOSTS_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts";
+
+let cancelled = false, t0, tn = 0, bn = 0, totalDomains = 0;
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+async function probe(domain) {
+  const t = performance.now();
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), TIMEOUT);
+  try {
+    await fetch(`https://${domain}/favicon.ico`, { mode:"no-cors", cache:"no-store", credentials:"omit", signal:ctrl.signal });
+    clearTimeout(tid);
+    return { domain, blocked: false };
+  } catch(e) {
+    clearTimeout(tid);
+    const dt = performance.now() - t;
+    return { domain, blocked: !ctrl.signal.aborted && dt < FAST_FAIL };
+  }
+}
+
+function scoreColor(pct) {
+  return pct >= 90 ? "#4ade80" : pct >= 65 ? "#fbbf24" : tn > 0 ? "#f87171" : "#888";
+}
+
+function updateUI(pct) {
+  const c = scoreColor(pct);
+  const el = document.getElementById("pct");
+  el.textContent = pct;
+  el.className = "";
+  el.style.color = c;
+  document.getElementById("prog-bar").style.background = c;
+}
+
+function setStatus(txt) { document.getElementById("status").textContent = txt; }
+
+async function startTest() {
+  cancelled = false; tn = 0; bn = 0;
+  document.getElementById("err-box").style.display = "none";
+  document.getElementById("verdict-box").style.display = "none";
+  document.getElementById("log-box").style.display = "none";
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("buttons").innerHTML = '<button onclick="stopTest()">stop</button>';
+  setStatus("fetching domain list…");
+  updateVals(0, 0, 0, 0);
+
+  let domains;
+  try {
+    const r = await fetch(HOSTS_URL);
+    const txt = await r.text();
+    domains = [];
+    for (const line of txt.split("\n")) {
+      if (domains.length >= TARGET) break;
+      const t = line.trim();
+      if (!t.startsWith("0.0.0.0 ")) continue;
+      const parts = t.split(/\s+/);
+      const d = parts[1];
+      if (d && d !== "0.0.0.0" && !d.includes("#") && d.includes(".")) domains.push(d);
+    }
+    shuffle(domains);
+  } catch(e) {
+    showErr("Could not fetch domain list. Check your connection.");
+    document.getElementById("buttons").innerHTML = '<button onclick="startTest()">start test ↗</button>';
+    return;
+  }
+
+  totalDomains = domains.length;
+  t0 = performance.now();
+  document.getElementById("prog-label").textContent = `0 / ${totalDomains.toLocaleString()}`;
+  document.getElementById("log-box").style.display = "block";
+  setStatus("scanning…");
+
+  for (let i = 0; i < domains.length; i += BATCH) {
+    if (cancelled) { document.getElementById("buttons").innerHTML = '<button onclick="startTest()">start test ↗</button>'; return; }
+    const batch = domains.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(probe));
+    if (cancelled) { document.getElementById("buttons").innerHTML = '<button onclick="startTest()">start test ↗</button>'; return; }
+
+    bn += results.filter(r => r.blocked).length;
+    tn += results.length;
+    const secs = (performance.now() - t0) / 1000;
+    const dps = tn / secs;
+    const remaining = Math.round((domains.length - tn) / dps);
+    const pct = Math.round((bn / tn) * 100);
+    const prog = Math.round((tn / domains.length) * 100);
+
+    updateVals(pct, tn, bn, Math.round(dps));
+    document.getElementById("prog-bar").style.width = prog + "%";
+    document.getElementById("prog-label").textContent = `${tn.toLocaleString()} / ${domains.length.toLocaleString()}`;
+    document.getElementById("prog-pct").textContent = prog + "% done";
+    document.getElementById("eta").textContent = remaining >= 60
+      ? `${Math.floor(remaining/60)}m ${remaining%60}s remaining`
+      : `${remaining}s remaining`;
+
+    const logEl = document.getElementById("log");
+    const frag = document.createDocumentFragment();
+    results.slice(-10).reverse().forEach(r => {
+      const row = document.createElement("div");
+      row.className = "log-entry";
+      row.innerHTML = `
+        <span class="log-dot ${r.blocked ? 'green' : 'red'}">${r.blocked ? '●' : '○'}</span>
+        <span class="log-domain">${r.domain}</span>
+        <span class="log-status ${r.blocked ? 'green' : 'gray'}">${r.blocked ? 'blocked' : 'reachable'}</span>
+      `;
+      frag.appendChild(row);
+    });
+    logEl.insertBefore(frag, logEl.firstChild);
+    while (logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
+  }
+
+  const finalPct = Math.round((bn / tn) * 100);
+  setStatus(`complete — tested ${tn.toLocaleString()} domains`);
+  document.getElementById("eta").textContent = "";
+  document.getElementById("prog-pct").textContent = "100% done";
+  showVerdict(finalPct, scoreColor(finalPct));
+  document.getElementById("buttons").innerHTML =
+    '<button onclick="startTest()">run again ↗</button><button onclick="resetAll()">reset</button>';
+}
+
+function stopTest() { cancelled = true; setStatus("stopped"); }
+
+function resetAll() {
+  tn = 0; bn = 0;
+  updateVals(0, 0, 0, 0);
+  document.getElementById("pct").textContent = "0";
+  document.getElementById("pct").style.color = "#888";
+  document.getElementById("prog-bar").style.width = "0%";
+  document.getElementById("prog-bar").style.background = "#888";
+  document.getElementById("prog-label").textContent = "0 / 10,000";
+  document.getElementById("prog-pct").textContent = "0% done";
+  document.getElementById("eta").textContent = "";
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("log-box").style.display = "none";
+  document.getElementById("verdict-box").style.display = "none";
+  document.getElementById("err-box").style.display = "none";
+  document.getElementById("buttons").innerHTML = '<button onclick="startTest()">start test ↗</button>';
+  setStatus("ready");
+}
+
+function updateVals(pct, tested, blocked, spd) {
+  updateUI(pct);
+  document.getElementById("val-blocked").textContent = blocked.toLocaleString();
+  document.getElementById("val-missed").textContent = (tested - blocked).toLocaleString();
+  document.getElementById("val-tested").textContent = tested.toLocaleString();
+  document.getElementById("val-speed").textContent = spd > 0 ? spd + "/s" : "—";
+}
+
+function showErr(msg) {
+  const el = document.getElementById("err-box");
+  el.textContent = msg; el.style.display = "block";
+  setStatus("error");
+}
+
+function showVerdict(pct, color) {
+  const msg =
+    pct >= 95 ? "Elite — your adblocker is exceptional." :
+    pct >= 85 ? "Strong — very good ad blocking." :
+    pct >= 70 ? "Good — consider adding more filter lists." :
+    pct >= 50 ? "Moderate — your setup needs improvement." :
+    pct >= 20 ? "Weak — install uBlock Origin + extra filter lists." :
+    "Unprotected — no meaningful ad blocking detected.";
+  const el = document.getElementById("verdict-box");
+  el.style.borderLeft = `3px solid ${color}`;
+  el.style.background = "#1a1a1a";
+  el.innerHTML = `<span style="color:${color};font-weight:500">${pct}% blocked</span> — <span style="color:#aaa">${msg}</span>`;
+  el.style.display = "block";
+}
+</script>
+</body>
+</html>
